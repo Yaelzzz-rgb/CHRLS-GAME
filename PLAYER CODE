@@ -1,0 +1,87 @@
+extends CharacterBody2D
+
+@export var walk_speed: float = 300.0
+@export var dash_speed: float = 900.0
+@export var dash_duration: float = 0.3   # seconds
+@export var dash_cooldown: float = 3.0    # seconds
+
+var input_vector: Vector2 = Vector2.ZERO
+var is_dashing: bool = false
+var dash_time: float = 0.0
+var cooldown_time: float = 0.0
+var last_move_dir: Vector2 = Vector2.RIGHT
+
+# Get the AnimatedSprite2D node (or AnimationPlayer if that's what you use)
+@onready var anim_sprite: AnimatedSprite2D = $Player_Sprite
+
+func _physics_process(delta: float) -> void:
+	# read 8-direction input
+	input_vector.x = Input.get_action_strength("mv_right") - Input.get_action_strength("mv_left")
+	input_vector.y = Input.get_action_strength("mv_down") - Input.get_action_strength("mv_up")
+	if input_vector != Vector2.ZERO:
+		input_vector = input_vector.normalized()
+		last_move_dir = input_vector
+
+	# start dash (uses current input direction or last movement direction)
+	if Input.is_action_just_pressed("mv_dash") and cooldown_time <= 0.0 and not is_dashing:
+		var dash_dir: Vector2 = input_vector if input_vector != Vector2.ZERO else last_move_dir
+		if dash_dir == Vector2.ZERO:
+			dash_dir = Vector2.RIGHT
+		is_dashing = true
+		dash_time = dash_duration
+		cooldown_time = dash_cooldown
+		velocity = dash_dir * dash_speed
+		anim_sprite.play("Dash") #FOR DASH ANIMATION
+
+
+	# dash timer / end dash
+	if is_dashing:
+		dash_time -= delta
+		if dash_time <= 0.0:
+			is_dashing = false
+			# when dash ends, either continue walking if player is holding a direction, or stop
+			if input_vector != Vector2.ZERO:
+				velocity = input_vector * walk_speed
+			else:
+				velocity = Vector2.ZERO
+	else:
+		# normal movement when not dashing
+		if input_vector != Vector2.ZERO:
+			velocity = input_vector * walk_speed
+			if anim_sprite.animation != "Walk": #FOR WALK ANIMATION
+				anim_sprite.play("Walk")
+		else:
+			# smooth stop (prevents instant snap if you prefer inertia)
+			velocity = velocity.move_toward(Vector2.ZERO, walk_speed * delta * 8)
+			if anim_sprite.animation != "Idle":
+				anim_sprite.play("Idle")
+
+
+	# cooldown countdown
+	if cooldown_time > 0.0:
+		cooldown_time -= delta
+
+#FOR SPRITE FLIPPING BASED ON DIRECTION
+	if input_vector.x < 0:
+		anim_sprite.flip_h = true
+	elif input_vector.x > 0:
+		anim_sprite.flip_h = false
+
+	# perform movement
+	move_and_slide()
+
+#for enemy detection
+var health: int = 100
+
+func take_damage(amount: int, knockback: Vector2) -> void:
+	health -= amount
+	print("Player HP:", health)
+# Apply knockback
+	velocity += knockback
+	if health <= 0:
+		die()
+
+
+func die() -> void:
+	print("Player has died.")
+	queue_free()
