@@ -1,0 +1,114 @@
+extends Node2D
+
+@export_group("Aim Settings")
+@export var rotate_speed: float = 10.0
+@export var invert_y: bool = false
+
+@export_group("Attack Settings")
+@export var cone_angle_deg: float = 45.0
+@export var attack_range: float = 300.0   # renamed from "range" to avoid shadowing built-in
+@export var damage: int = 25
+@export var cooldown: float = 0.6
+@export var flash_duration: float = 0.12
+@export var flash_fade_time: float = 0.15
+@export var debug: bool = false
+
+@export_group("Other")
+@export var aim_sprite_path: NodePath = NodePath("Sprite2D")  # default matches your scene screenshot
+@export var fire_action: String = "Attack"
+
+var _cooldown_timer: float = 0.0
+@onready var aim_sprite: Sprite2D = get_node_or_null(aim_sprite_path)
+
+func _ready() -> void:
+	if aim_sprite == null:
+		push_warning("CameraWeapon: AimSprite not found. Assign aim_sprite_path to your Sprite2D (or rename child to 'Sprite2D').")
+
+func _process(delta: float) -> void:
+	_cooldown_timer = max(0.0, _cooldown_timer - delta)
+	_update_aim(delta)
+	if Input.is_action_just_pressed(fire_action) and _cooldown_timer <= 0.0:
+		_cooldown_timer = cooldown
+		_fire()
+
+func _update_aim(delta: float) -> void:
+	var mouse_pos: Vector2 = get_global_mouse_position()
+	var to_mouse: Vector2 = mouse_pos - global_position
+	if to_mouse.length() == 0:
+		return
+	var angle: float = to_mouse.angle()
+	if invert_y:
+		angle = -angle
+	var t: float = clamp(delta * rotate_speed, 0.0, 1.0)
+	if aim_sprite:
+		aim_sprite.rotation = lerp_angle(aim_sprite.rotation, angle, t)
+		rotation = aim_sprite.rotation
+	else:
+		rotation = lerp_angle(rotation, angle, t)
+
+func _fire() -> void:
+	var aim_dir: Vector2
+	if aim_sprite:
+		aim_dir = Vector2.RIGHT.rotated(aim_sprite.global_rotation)
+	else:
+		aim_dir = (get_global_mouse_position() - global_position).normalized()
+	_spawn_flash_visual(aim_dir)
+	_deal_damage_to_enemies(aim_dir)
+
+# ----------------------------
+# Visual cone flash (temporary)
+# ----------------------------
+func _spawn_flash_visual(aim_dir: Vector2) -> void:
+	var cone: Polygon2D = Polygon2D.new()
+	cone.z_index = 100
+
+	var points: PackedVector2Array = PackedVector2Array()
+	points.append(Vector2.ZERO)
+
+	var half_angle: float = cone_angle_deg * 0.5 * (PI / 180.0)  # deg -> rad
+	var segments: int = 14
+
+	for i in range(segments + 1):
+		var t: float = float(i) / float(segments)
+		var ang: float = -half_angle + t * (2.0 * half_angle)
+		var p: Vector2 = aim_dir.rotated(ang) * attack_range
+		points.append(p)
+
+	cone.polygon = points
+	cone.modulate = Color(1, 1, 1, 0.9)
+	add_child(cone)
+
+	var tween := create_tween()
+	tween.tween_property(cone, "modulate:a", 0.0, flash_fade_time).set_delay(flash_duration)
+	tween.tween_callback(Callable(self, "_on_flash_finished").bind(cone)).set_delay(flash_duration + flash_fade_time)
+
+func _on_flash_finished(cone_node: Node) -> void:
+	if is_instance_valid(cone_node):
+		cone_node.queue_free()
+
+# ----------------------------
+# Damage detection (angle + range)
+# ----------------------------
+func _deal_damage_to_enemies(aim_dir: Vector2) -> void:
+	var half_angle: float = cone_angle_deg * 0.5 * (PI / 180.0)
+	var enemies: Array = get_tree().get_nodes_in_group("enemies")  # use lowercase, see enemy script below
+	var enemies_hit: Array = []
+
+	for enemy in enemies:
+		if not (enemy is Node2D):
+			continue
+		var to_enemy: Vector2 = enemy.global_position - global_position
+		var dist: float = to_enemy.length()
+		if dist > attack_range:
+			continue
+		var angle_to_enemy: float = aim_dir.angle_to(to_enemy.normalized())
+		if abs(angle_to_enemy) <= half_angle:
+			if enemy.has_method("take_damage"):
+				enemy.take_damage(damage)
+				enemies_hit.append(enemy)
+			elif enemy.has_variable("health"):
+				enemy.health = max(0, enemy.health - damage)
+				enemies_hit.append(enemy)
+
+	if debug:
+		print("AOE hit count:", enemies_hit.size(), "targets:", enemies_hit)
