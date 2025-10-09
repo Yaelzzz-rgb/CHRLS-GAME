@@ -1,0 +1,81 @@
+extends CharacterBody2D
+
+@export var move_speed: float = 100.0
+@export var detection_radius: float = 500.0
+@export var attack_radius: float = 40.0
+@export var attack_cooldown: float = 1.0
+@export var attack_damage: int = 10
+@export var knockback_strength: float = 200.0
+
+@export var max_health: int = 100
+var health: int = max_health
+
+var _player: CharacterBody2D = null
+var _can_attack: bool = true
+
+@onready var sprite: Sprite2D = $Sprite2D
+
+func _ready() -> void:
+	# Auto-find the player node by name and add this enemy to the group used by the weapon
+	_player = get_tree().root.find_child("Player", true, false)
+	if not is_in_group("enemies"):
+		add_to_group("enemies")
+
+func _physics_process(_delta: float) -> void:
+	if _player == null:
+		velocity = Vector2.ZERO
+		move_and_slide()
+		return
+
+	var to_player: Vector2 = _player.global_position - global_position
+	var distance: float = to_player.length()
+
+	# Chase the player if within detection radius
+	if distance <= detection_radius:
+		velocity = to_player.normalized() * move_speed
+	else:
+		velocity = Vector2.ZERO
+
+	# Attack player if close enough
+	if distance <= attack_radius and _can_attack:
+		attack_player(to_player)
+		velocity = Vector2.ZERO
+
+	move_and_slide()
+
+func attack_player(direction: Vector2) -> void:
+	if _player and _player.has_method("take_damage"):
+		_player.take_damage(attack_damage, direction.normalized() * knockback_strength)
+	_can_attack = false
+	await get_tree().create_timer(attack_cooldown).timeout
+	_can_attack = true
+
+# ----------------------------
+# DAMAGE SYSTEM FOR ENEMY
+# ----------------------------
+func take_damage(amount: int, knockback: Vector2 = Vector2.ZERO) -> void:
+	health -= amount
+	print("Enemy took damage: ", amount, " | HP left: ", health)
+
+	# Optional knockback effect
+	if knockback != Vector2.ZERO:
+		velocity += knockback
+
+	# Visual feedback
+	_flash_red()
+
+	if health <= 0:
+		die()
+
+func die() -> void:
+	print("Enemy died")
+	queue_free()
+
+# ----------------------------
+# Visual damage feedback
+# ----------------------------
+func _flash_red() -> void:
+	if sprite:
+		sprite.modulate = Color(1, 0.2, 0.2)
+		var t := create_tween()
+		t.tween_property(sprite, "modulate", Color(1, 1, 1), 0.2)
