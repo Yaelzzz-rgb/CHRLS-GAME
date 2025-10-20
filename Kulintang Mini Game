@@ -1,0 +1,136 @@
+#================
+#BELL CODE
+#================
+extends Area2D
+
+@export var pitch: float
+@export var start_position: Vector2
+var is_dragging: bool = false
+var offset: Vector2
+var current_slot: Node = null
+
+@onready var audio_player = $AudioStreamPlayer2D
+
+func _ready() -> void:
+	position = start_position
+	audio_player.pitch_scale = pitch
+	input_pickable = true
+
+func _input_event(_viewport, event, _shape_idx):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			is_dragging = true
+			offset = global_position - get_global_mouse_position()
+			play_sound()
+			# If it was in a slot, free it
+			if current_slot != null:
+				current_slot.bell_in_slot = null
+				current_slot = null
+
+func _unhandled_input(event):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		# mouse released anywhere
+		if is_dragging:
+			is_dragging = false
+			if current_slot != null:
+				snap_to_slot(current_slot.global_position)
+
+func _process(_delta: float) -> void:
+	if is_dragging:
+		global_position = get_global_mouse_position() + offset
+
+func play_sound():
+	audio_player.play()
+
+func reset_to_start():
+	current_slot = null
+	snap_to_slot(start_position)
+
+func snap_to_slot(target_position: Vector2):
+	# Tween for smooth snapping
+	var tween = create_tween()
+	tween.tween_property(self, "global_position", target_position, 0.2) \
+		.set_trans(Tween.TRANS_SINE) \
+		.set_ease(Tween.EASE_OUT)
+
+
+#=================
+#SLOTS CODE
+#=================
+extends Area2D
+
+var bell_in_slot: Node = null
+
+func _on_area_entered(area: Area2D) -> void:
+	# Check if the entered area is a bell and can snap
+	if area.has_method("snap_to_slot"):
+		# If this slot already has a bell, push it out to its start position
+		if bell_in_slot != null and bell_in_slot != area:
+			bell_in_slot.reset_to_start()
+
+		# Assign the bell to this slot
+		bell_in_slot = area
+		bell_in_slot.current_slot = self
+		bell_in_slot.snap_to_slot(global_position)
+
+func _on_area_exited(area: Area2D) -> void:
+	# If the bell leaves the slot, free it
+	if bell_in_slot == area:
+		bell_in_slot = null
+
+#==================
+#GAME MANAGER CODE
+#==================
+extends Node
+
+@onready var bell_container = $"../BellContainer"
+@onready var slot_container = $"../SlotContainer"
+
+var bells: Array
+var slots: Array
+
+func _ready():
+	bells = bell_container.get_children()
+	slots = slot_container.get_children()
+	randomize_bell_positions()
+
+func randomize_bell_positions():
+	var positions: Array = []
+	for bell in bells:
+		positions.append(bell.start_position)  # store original starting positions
+
+	positions.shuffle()  # randomize the positions
+
+	for i in range(bells.size()):
+		bells[i].start_position = positions[i]  # assign new shuffled start
+		bells[i].reset_to_start()  # then reset to that new position
+
+func _process(_delta):
+	if check_all_slots_filled():
+		if check_order_correct():
+			print("🎉 You win!")
+		else:
+			print("❌ Incorrect order. Resetting...")
+			await get_tree().create_timer(0.5).timeout
+			randomize_bell_positions()
+
+func check_all_slots_filled() -> bool:
+	for slot in slots:
+		if slot.bell_in_slot == null:
+			return false
+	return true
+
+func check_order_correct() -> bool:
+	# Sort slots from left to right by x-position
+	slots.sort_custom(func(a, b): return a.global_position.x < b.global_position.x)
+
+	var previous_pitch = -INF
+	for slot in slots:
+		var bell = slot.bell_in_slot
+		if bell == null:
+			return false
+		if bell.pitch < previous_pitch:
+			return false
+		previous_pitch = bell.pitch
+
+	return true
