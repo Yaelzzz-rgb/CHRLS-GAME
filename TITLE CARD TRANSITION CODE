@@ -1,0 +1,92 @@
+#MAKE SCENE WITH CANVAS LAYER AS ROOT NODE
+#CANVAS LAYER > COLOR RECT (name :fade) > LABEL (name: title)> AnimationPlayer (make fade in and out animations)
+
+#-----------------------
+#CODE FOR THE TITLE CARD
+#-----------------------
+
+extends CanvasLayer
+# This script is attached to your reusable TitleCard.tscn
+# You can drop this scene into ANY level and it will auto-handle transitions
+
+@export var fade_in_anim := "fade_in"      # Name of fade-in animation inside AnimationPlayer
+@export var fade_out_anim := "fade_out"    # Name of fade-out animation inside AnimationPlayer
+
+var _next_scene := ""          # Stores the path of the scene to load after input
+var _allow_input := false      # Prevents player input until fade-in is done
+
+
+# -------------------------------------------------------------------
+# FUNCTION: Called from the CURRENT scene to start a transition
+# Usage Example:
+#   $TitleCard.show_title("Act V: Veil of Deceit", "res://act_5_scene.tscn")
+# -------------------------------------------------------------------
+func show_title(title_text: String, scene_path: String) -> void:
+	_next_scene = scene_path                       # Store next scene path
+	Global.transitioning = true                    # Let next scene know a transition is happening
+
+	$"title text".text = title_text                # Sets the visible text of the title card label
+	visible = true                                 # Show the title card
+	_allow_input = false                           # Block input until fade-in ends
+
+	$AnimationPlayer.play(fade_in_anim)            # Play fade-in animation
+	print("▶ Fade-in starting, preparing transition to:", scene_path)
+
+
+# -------------------------------------------------------------------
+# RUNS EVERY TIME THE TITLE CARD LOADS (whether it's Scene A or Scene B)
+# -------------------------------------------------------------------
+func _ready() -> void:
+	# Connect animation finished signal
+	$AnimationPlayer.animation_finished.connect(_on_anim_finished)
+
+	# If we entered the scene AFTER a transition (meaning scene just changed),
+	# we automatically play fade-out instead of fade-in.
+	if Global.transitioning and _next_scene == "":
+		print("▶ Scene was just loaded after transition, auto fade-out")
+		visible = true
+		$AnimationPlayer.play(fade_out_anim)
+
+
+# -------------------------------------------------------------------
+# HANDLES INPUT DURING TITLE CARD DISPLAY
+# -------------------------------------------------------------------
+func _process(_delta: float) -> void:
+	# Only allow input AFTER fade-in finishes
+	if _allow_input and Input.is_action_just_pressed("dash"):
+		print("▶ DASH pressed, switching to:", _next_scene)
+		get_tree().change_scene_to_file(_next_scene)
+		# TitleCard in next scene will fade OUT automatically
+
+
+# -------------------------------------------------------------------
+# HANDLES WHAT HAPPENS WHEN AN ANIMATION FINISHES
+# -------------------------------------------------------------------
+func _on_anim_finished(anim_name: String) -> void:
+	print("Animation finished:", anim_name)
+
+	# Fade-in finished → allow input
+	if anim_name == fade_in_anim:
+		_allow_input = true
+		print("✅ Fade-in done, waiting for input...")
+
+	# Fade-out finished → hide and reset transition state
+	elif anim_name == fade_out_anim:
+		visible = false
+
+
+		Global.transitioning = false               # Reset global flag
+		print("✅ Fade-out done, title card hidden")
+
+#--------------------------------------------------------------------------
+#CODE FOR DETECTION AREA [NOTE: PLAYER SCRIPT NEEDS CLASS NAME AS player]
+#--------------------------------------------------------------------------
+
+
+
+extends Node2D
+
+
+func _on_transition_body_entered(body: Node2D) -> void:
+	if body is player:
+		$"title card".show_title("INSERT TEXT", "INSERT NEXT SCENE")
