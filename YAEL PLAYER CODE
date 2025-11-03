@@ -1,0 +1,94 @@
+extends CharacterBody2D
+
+class_name mc
+
+@export var walk_speed: float = 300.0
+@export var dash_speed: float = 900.0
+@export var dash_duration: float = 0.3
+@export var dash_cooldown: float = 3.0
+
+var input_vector: Vector2 = Vector2.ZERO
+var is_dashing: bool = false
+var dash_time: float = 0.0
+var cooldown_time: float = 0.0
+var last_move_dir: Vector2 = Vector2.DOWN   # default facing
+
+@onready var anim_sprite: AnimatedSprite2D = $"player sprite"
+
+func _physics_process(delta: float) -> void:
+	# Get input
+	input_vector.x = Input.get_action_strength("mv_right") - Input.get_action_strength("mv_left")
+	input_vector.y = Input.get_action_strength("mv_down") - Input.get_action_strength("mv_up")
+
+	if input_vector != Vector2.ZERO:
+		input_vector = input_vector.normalized()
+		last_move_dir = input_vector   # saves last facing direction
+
+	# Dash
+	if Input.is_action_just_pressed("dash") and cooldown_time <= 0.0 and not is_dashing:
+		var dash_dir: Vector2 = input_vector if input_vector != Vector2.ZERO else last_move_dir
+		if dash_dir == Vector2.ZERO:
+			dash_dir = Vector2.RIGHT
+		is_dashing = true
+		dash_time = dash_duration
+		cooldown_time = dash_cooldown
+		velocity = dash_dir * dash_speed
+		play_dash_animation()
+
+	if is_dashing:
+		dash_time -= delta
+		if dash_time <= 0.0:
+			is_dashing = false
+			if input_vector != Vector2.ZERO:
+				velocity = input_vector * walk_speed
+			else:
+				velocity = Vector2.ZERO
+	else:
+		handle_walk_animations()
+		if input_vector != Vector2.ZERO:
+			velocity = input_vector * walk_speed
+		else:
+			velocity = velocity.move_toward(Vector2.ZERO, walk_speed * delta * 8)
+
+	# Cooldown tick
+	if cooldown_time > 0.0:
+		cooldown_time -= delta
+
+	move_and_slide()
+
+
+# -------------------------
+# ANIMATION FUNCTIONS
+# -------------------------
+func play_dash_animation() -> void:
+	anim_sprite.play("dash")
+
+func handle_walk_animations() -> void:
+	if input_vector == Vector2.ZERO:
+		play_idle_animation()
+	else:
+		play_walk_animation()
+
+
+func play_idle_animation() -> void:
+	match get_direction_name(last_move_dir):
+		"left": anim_sprite.play("idle_left")
+		"right": anim_sprite.play("idle_right")
+		"front": anim_sprite.play("idle_front")
+		"back": anim_sprite.play("idle_back")
+
+
+func play_walk_animation() -> void:
+	match get_direction_name(input_vector):
+		"left": anim_sprite.play("mv_left")
+		"right": anim_sprite.play("mv_right")
+		"front": anim_sprite.play("mv_front")
+		"back": anim_sprite.play("mv_back")
+
+
+# Convert Vector2 direction into a readable string
+func get_direction_name(dir: Vector2) -> String:
+	if abs(dir.x) > abs(dir.y):
+		return "right" if dir.x > 0 else "left"
+	else:
+		return "front" if dir.y > 0 else "back"
