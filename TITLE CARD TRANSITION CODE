@@ -53,7 +53,7 @@ func _ready() -> void:
 # -------------------------------------------------------------------
 func _process(_delta: float) -> void:
 	# Only allow input AFTER fade-in finishes
-	if _allow_input and Input.is_action_just_pressed("dash"):
+	if _allow_input and Input.is_action_just_pressed("interact"):
 		print("▶ DASH pressed, switching to:", _next_scene)
 		get_tree().change_scene_to_file(_next_scene)
 		# TitleCard in next scene will fade OUT automatically
@@ -73,8 +73,6 @@ func _on_anim_finished(anim_name: String) -> void:
 	# Fade-out finished → hide and reset transition state
 	elif anim_name == fade_out_anim:
 		visible = false
-
-
 		Global.transitioning = false               # Reset global flag
 		print("✅ Fade-out done, title card hidden")
 
@@ -82,11 +80,16 @@ func _on_anim_finished(anim_name: String) -> void:
 #CODE FOR DETECTION AREA [NOTE: PLAYER SCRIPT NEEDS CLASS NAME AS player]
 #--------------------------------------------------------------------------
 
-
-
 extends Node2D
 
 
 func _on_transition_body_entered(body: Node2D) -> void:
 	if body is player:
 		$"title card".show_title("INSERT TEXT", "INSERT NEXT SCENE")
+
+#-------------------------------------------------
+#NOTE: ADD A GOBAL SCRIPT IN AUTOLOAD WITH THIS CODE
+#-------------------------------------------------
+extends Node
+
+var transitioning := false
