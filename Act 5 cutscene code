@@ -1,35 +1,123 @@
 extends Node2D
 
+# Tracks whether the player is inside the Area2D zone near the elder NPC
 var player_in_range = false
 
-@onready var player = $player
-@onready var player_cam = $player/Camera2D
-@onready var cutscene_cam = $"AnimationPlayer/Cutscene camera"
-@onready var anim_player = $AnimationPlayer
-@onready var detection_area = $Area2D
+# Used to control the cutscene sequence:
+# 0 = no cutscene started yet
+# 1 = first cutscene finished, waiting for second trigger
+# 2 = both cutscenes finished
+var cutscene_stage := 0
 
+
+# --- NODE REFERENCES (Auto-loaded when scene is ready) ---
+
+@onready var player = $player							# reference to player instance in the scene
+@onready var player_cam = $"player/PLAYER CAM"			# camera inside the player scene
+
+@onready var anim_player = $AnimationPlayer				# AnimationPlayer that controls elder animations
+@onready var detection_area = $Area2D					# Area2D that detects player proximity
+
+@onready var confront_cam = $"AnimationPlayer/Confront camera"	# Camera used for the 1st cutscene
+@onready var walkoff_cam = $"AnimationPlayer/Cutscene camera"		# Camera used for the 2nd cutscene
+
+
+
+# Called when scene is ready
 func _ready():
+	# Connect Area2D signals for entering/exiting NPC range
 	detection_area.body_entered.connect(_on_area_enter)
 	detection_area.body_exited.connect(_on_area_exit)
 
+	# Connect animation finished signal so we can know when the current cutscene ends
+	anim_player.animation_finished.connect(_on_animation_finished)
 
+	print("✅ Ready. Waiting for player input.")
+
+
+
+# --- AREA2D SIGNAL CALLBACKS ---
+
+# When the player enters the detection zone
 func _on_area_enter(body):
 	if body == player:
 		player_in_range = true
+		print("▶️ Player entered area.")
 
 
+# When the player leaves the detection zone
 func _on_area_exit(body):
 	if body == player:
 		player_in_range = false
+		print("⏹ Player left area.")
 
+
+
+# --- PLAYER INPUT HANDLING ---
 
 func _input(event):
-	if player_in_range and event.is_action_pressed("dash"):
-		start_cutscene()
+	# Ignore input if player isn't near elder
+	if !player_in_range: return
+
+	# Only react when the player presses the "interact" input
+	if !event.is_action_pressed("interact"): return
+
+	print("🎯 Interact pressed. Stage =", cutscene_stage)
+
+	# Switch logic depending on which part of the cutscene we're in
+	match cutscene_stage:
+		0:		# first interaction → play first cutscene
+			start_confront_cutscene()
+		1:		# second interaction → continue to walk-off cutscene
+			start_walkoff_cutscene()
+		2:		# both finished
+			print("✅ Cutscene already finished.")
 
 
-func start_cutscene():
-	print("Cutscene starting...")
 
-	cutscene_cam.make_current()
+# --- CUTSCENE #1: Elder Confront Animation ---
+
+func start_confront_cutscene():
+	print("▶️ Playing elder_confront_art...")
+
+	# Make sure stage is still 0 (first stage)
+	cutscene_stage = 0
+
+	# Switch to the confront camera
+	confront_cam.make_current()
+
+	# Play the first animation
+	anim_player.play("elder_confront_art")
+
+
+
+# --- CUTSCENE #2: Elder Walk-Off Animation ---
+
+func start_walkoff_cutscene():
+	print("▶️ Playing elder_walk_off...")
+
+	# Mark stage as complete
+	cutscene_stage = 2
+
+	# Switch to the second cutscene camera
+	walkoff_cam.make_current()
+
+	# Play the second animation
 	anim_player.play("elder_walk_off")
+
+
+
+# --- CALLED AFTER EVERY ANIMATION FINISHES ---
+
+func _on_animation_finished(anim_name):
+	print("🔔 Animation finished:", anim_name)
+
+	# First animation just finished → wait for next button press
+	if anim_name == "elder_confront_art":
+		print("✅ First cutscene done. Waiting for next interact press...")
+		cutscene_stage = 1		# allow 2nd cutscene now
+
+	# Second animation finished → restore camera back to player
+	elif anim_name == "elder_walk_off":
+		print("✅ Second cutscene done. Returning to player camera.")
+		player_cam.make_current()
