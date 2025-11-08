@@ -1,0 +1,80 @@
+extends Node2D
+
+const ATTACK = preload("res://cone.png")
+
+@export var damage: int = 25
+@export var cone_angle_deg: float = 45.0
+@export var attack_delay: float = 0.2  # ⏳ delay before firing
+@export var fire_cooldown: float = 0.4 # 🔁 delay before next attack allowed
+
+@export_group("Other")
+@export var lens_path: NodePath = NodePath("Sprite2D")  # assign your aiming sprite here
+@export var fire_action: String = "Attack"
+
+@onready var lens: Sprite2D = get_node_or_null(lens_path)
+var can_attack: bool = true
+
+func _process(_delta: float) -> void:
+	# Aim the node towards the mouse
+	look_at(get_global_mouse_position())
+	rotation_degrees = wrap(rotation_degrees, 0, 360)
+	
+	# Flip vertically if aiming left
+	if rotation_degrees > 90 and rotation_degrees < 270:
+		scale.y = -1
+	else:
+		scale.y = 1
+
+	# Fire attack (only if not on cooldown)
+	if Input.is_action_just_pressed(fire_action) and can_attack:
+		can_attack = false
+		_fire_with_delay()
+
+func _fire_with_delay() -> void:
+	# Add delay before attack
+	await get_tree().create_timer(attack_delay).timeout
+	_fire()
+	
+	# Cooldown before next attack
+	await get_tree().create_timer(fire_cooldown).timeout
+	can_attack = true
+
+func _fire() -> void:
+	if not lens:
+		push_warning("Lens not assigned! Assign your Sprite2D to lens_path.")
+		return
+	
+	var attack_sprite = Sprite2D.new()
+	attack_sprite.texture = ATTACK
+	attack_sprite.scale = Vector2(0.5, 0.5)
+	attack_sprite.global_position = lens.global_position
+	attack_sprite.rotation = rotation
+	get_tree().root.add_child(attack_sprite)
+
+	# How long the attack visual lasts
+	await get_tree().create_timer(0.3).timeout
+	if is_instance_valid(attack_sprite):
+		attack_sprite.queue_free()
+
+	var aim_dir: Vector2 = (get_global_mouse_position() - global_position).normalized()
+	_deal_damage_to_enemies(aim_dir)
+
+func _deal_damage_to_enemies(aim_dir: Vector2) -> void:
+	var half_angle: float = cone_angle_deg * 0.5 * (PI / 180.0)
+	var enemies: Array = get_tree().get_nodes_in_group("enemies")
+	var enemies_hit: Array = []
+
+	for enemy in enemies:
+		if not (enemy is Node2D):
+			continue
+		var to_enemy: Vector2 = enemy.global_position - global_position
+		var _dist: float = to_enemy.length()
+		var angle_to_enemy: float = aim_dir.angle_to(to_enemy.normalized())
+		
+		if abs(angle_to_enemy) <= half_angle:
+			if enemy.has_method("take_damage"):
+				enemy.take_damage(damage)
+				enemies_hit.append(enemy)
+			elif enemy.has_variable("health"):
+				enemy.health = max(0, enemy.health - damage)
+				enemies_hit.append(enemy)
